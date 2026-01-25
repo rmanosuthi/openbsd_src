@@ -76,7 +76,14 @@ struct bcmmbox_softc {
 
 	void *sc_ih;
 
-	struct mutex sc_intr_lock;
+	/*
+	 * We only have one DMA buffer.
+	 * Serialize bcmmbox_post(9) to avoid overwriting it.
+	 */
+	struct rwlock	sc_post_lock;
+
+	struct mutex	sc_intr_lock;
+
 	int sc_chan[BCMMBOX_NUM_CHANNELS];
 	uint32_t sc_mbox[BCMMBOX_NUM_CHANNELS];
 };
@@ -122,6 +129,7 @@ bcmmbox_attach(struct device *parent, struct device *self, void *aux)
 	bcmmbox_sc = sc;
 
 	mtx_init(&sc->sc_intr_lock, IPL_VM);
+	rw_init(&sc->sc_post_lock, "bcmmbox_post");
 
 	if (faa->fa_nreg < 1) {
 		printf(": no registers\n");
@@ -162,8 +170,8 @@ bcmmbox_attach(struct device *parent, struct device *self, void *aux)
 		goto clean_dmamap_destroy;
 	}
 
-	sc->sc_ih = fdt_intr_establish(faa->fa_node, IPL_VM, bcmmbox_intr, sc,
-	    DEVNAME(sc));
+	sc->sc_ih = fdt_intr_establish(faa->fa_node, IPL_VM,
+	    bcmmbox_intr, sc, DEVNAME(sc));
 	if (sc->sc_ih == NULL) {
 		printf(": failed to establish interrupt\n");
 		goto clean_dmamap;
@@ -227,7 +235,9 @@ bcmmbox_intr_helper(struct bcmmbox_softc *sc, int broadcast)
 
 	bcmmbox_reg_flush(sc, BUS_SPACE_BARRIER_READ);
 
-	while (!ISSET(bcmmbox_reg_read(sc, BCMMBOX0_STATUS), BCMMBOX_STATUS_EMPTY)) {
+	while (!ISSET(
+	    bcmmbox_reg_read(sc, BCMMBOX0_STATUS),
+	    BCMMBOX_STATUS_EMPTY)) {
 		mbox = bcmmbox_reg_read(sc, BCMMBOX0_READ);
 
 		chan = mbox & BCMMBOX_CHANNEL_MASK;
@@ -318,6 +328,7 @@ bcmmbox_post(uint8_t chan, void *buf, size_t len, uint32_t *res)
 	if (sc == NULL)
 		return ENXIO;
 
+	rw_enter_write(&sc->sc_post_lock);
 	memcpy(sc->sc_dmabuf, buf, len);
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_dmamap, 0, len,
 	    BUS_DMASYNC_PREREAD | BUS_DMASYNC_PREWRITE);
@@ -328,6 +339,7 @@ bcmmbox_post(uint8_t chan, void *buf, size_t len, uint32_t *res)
 	bus_dmamap_sync(sc->sc_dmat, sc->sc_dmamap, 0, len,
 	    BUS_DMASYNC_POSTREAD | BUS_DMASYNC_POSTWRITE);
 	memcpy(buf, sc->sc_dmabuf, len);
+	rw_exit_write(&sc->sc_post_lock);
 
 	return 0;
 }

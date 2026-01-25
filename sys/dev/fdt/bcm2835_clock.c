@@ -53,6 +53,7 @@
 #include <dev/ofw/ofw_clock.h>
 #include <dev/ofw/openfirm.h>
 
+#include <dev/ic/bcm2835_clock.h>
 #include <dev/ic/bcm2835_mbox.h>
 #include <dev/ic/bcm2835_vcprop.h>
 
@@ -84,13 +85,13 @@ struct bcmclock_softc {
 int bcmclock_match(struct device *, void *, void *);
 void bcmclock_attach(struct device *, struct device *, void *);
 
+uint32_t bcmclock_cd_get_frequency(void *, uint32_t *);
+
 const struct cfattach bcmclock_ca = {
 	sizeof(struct bcmclock_softc),
 	bcmclock_match,
 	bcmclock_attach,
 };
-
-uint32_t bcmclock_get_frequency(void *, uint32_t *);
 
 struct cfdriver bcmclock_cd = { NULL, "bcmclock", DV_DULL };
 
@@ -113,21 +114,28 @@ bcmclock_attach(struct device *parent, struct device *self, void *aux)
 
 	sc->sc_cd.cd_node = faa->fa_node;
 	sc->sc_cd.cd_cookie = sc;
-	sc->sc_cd.cd_get_frequency = bcmclock_get_frequency;
+	sc->sc_cd.cd_get_frequency = bcmclock_cd_get_frequency;
 
 	clock_register(&sc->sc_cd);
 }
 
-uint32_t
-bcmclock_get_frequency(void *cookie, uint32_t *cells)
+int
+bcmclock_get_frequency(uint32_t *res, uint32_t clk_vc_id, uint32_t clk_vc_type)
 {
 	struct request {
 		struct vcprop_buffer_hdr vb_hdr;
 		struct vcprop_tag_clockrate vbt_clkrate;
 		struct vcprop_tag end;
 	} __packed;
-
 	uint32_t result;
+	int error;
+
+	if (clk_vc_id == 0) {
+		printf("%s: unknown clock id %d\n",
+		    __func__, clk_vc_id);
+		return (ENOENT);
+	}
+
 	struct request req = {
 		.vb_hdr = {
 			.vpb_len = sizeof(req),
@@ -135,68 +143,142 @@ bcmclock_get_frequency(void *cookie, uint32_t *cells)
 		},
 		.vbt_clkrate = {
 			.tag = {
-				.vpt_tag = VCPROPTAG_GET_CLOCKRATE,
+				.vpt_tag = clk_vc_type,
 				.vpt_len = VCPROPTAG_LEN(req.vbt_clkrate),
 				.vpt_rcode = VCPROPTAG_REQUEST
 			},
+			.id = clk_vc_id,
 		},
 		.end = {
 			.vpt_tag = VCPROPTAG_NULL
 		}
 	};
 
+	error = bcmmbox_post(BCMMBOX_CHANARM2VC, &req, sizeof(req), &result);
+	if (error) {
+		printf("%s: post error %d\n", __func__, error);
+		return error;
+	}
+
+	if (vcprop_tag_success_p(&req.vbt_clkrate.tag)) {
+		*res = req.vbt_clkrate.rate;
+		return 0;
+	} else {
+		printf("%s: vcprop result %d:%d\n",
+		    __func__, req.vb_hdr.vpb_rcode,
+		    req.vbt_clkrate.tag.vpt_rcode);
+		return (EINVAL);
+	}
+}
+
+int
+bcmclock_set_frequency(uint32_t clk_vc_id, uint32_t clk_hz)
+{
+	struct request {
+		struct vcprop_buffer_hdr vb_hdr;
+		struct vcprop_tag_clockrate vbt_clkrate;
+		struct vcprop_tag end;
+	} __packed;
+	uint32_t result;
+	int error;
+
+	if (clk_vc_id == 0) {
+		printf("%s: unknown clock id %d\n",
+		    __func__, clk_vc_id);
+		return (ENOENT);
+	}
+
+	struct request req = {
+		.vb_hdr = {
+			.vpb_len = sizeof(req),
+			.vpb_rcode = VCPROP_PROCESS_REQUEST,
+		},
+		.vbt_clkrate = {
+			.tag = {
+				.vpt_tag = VCPROPTAG_SET_CLOCKRATE,
+				.vpt_len = VCPROPTAG_LEN(req.vbt_clkrate),
+				.vpt_rcode = VCPROPTAG_REQUEST
+			},
+			.id = clk_vc_id,
+			.rate = clk_hz,
+		},
+		.end = {
+			.vpt_tag = VCPROPTAG_NULL
+		}
+	};
+
+	error = bcmmbox_post(BCMMBOX_CHANARM2VC, &req, sizeof(req), &result);
+	if (error) {
+		printf("%s: post error %d\n", __func__, error);
+		return error;
+	}
+
+	if (vcprop_tag_success_p(&req.vbt_clkrate.tag)) {
+		return 0;
+	} else {
+		printf("%s: vcprop result %d:%d\n",
+		    __func__, req.vb_hdr.vpb_rcode,
+		    req.vbt_clkrate.tag.vpt_rcode);
+		return (EINVAL);
+	}
+}
+
+uint32_t
+bcmclock_cd_get_frequency(void *cookie, uint32_t *cells)
+{
+	uint32_t clk_id = 0;
+	uint32_t res;
+	int error;
+
 	switch (cells[0]) {
 	case BCMCLOCK_CLOCK_TIMER:
 		break;
 	case BCMCLOCK_CLOCK_UART:
-		req.vbt_clkrate.id = VCPROP_CLK_UART;
+		clk_id = VCPROP_CLK_UART;
 		break;
 	case BCMCLOCK_CLOCK_VPU:
-		req.vbt_clkrate.id = VCPROP_CLK_CORE;
+		clk_id = VCPROP_CLK_CORE;
 		break;
 	case BCMCLOCK_CLOCK_V3D:
-		req.vbt_clkrate.id = VCPROP_CLK_V3D;
+		clk_id = VCPROP_CLK_V3D;
 		break;
 	case BCMCLOCK_CLOCK_ISP:
-		req.vbt_clkrate.id = VCPROP_CLK_ISP;
+		clk_id = VCPROP_CLK_ISP;
 		break;
 	case BCMCLOCK_CLOCK_H264:
-		req.vbt_clkrate.id = VCPROP_CLK_H264;
+		clk_id = VCPROP_CLK_H264;
 		break;
 	case BCMCLOCK_CLOCK_VEC:
 		break;
 	case BCMCLOCK_CLOCK_HSM:
 		break;
 	case BCMCLOCK_CLOCK_SDRAM:
-		req.vbt_clkrate.id = VCPROP_CLK_SDRAM;
+		clk_id = VCPROP_CLK_SDRAM;
 		break;
 	case BCMCLOCK_CLOCK_TSENS:
 		break;
 	case BCMCLOCK_CLOCK_EMMC:
-		req.vbt_clkrate.id = VCPROP_CLK_EMMC;
+		clk_id = VCPROP_CLK_EMMC;
 		break;
 	case BCMCLOCK_CLOCK_PERIIMAGE:
 		break;
 	case BCMCLOCK_CLOCK_PWM:
-		req.vbt_clkrate.id = VCPROP_CLK_PWM;
+		clk_id = VCPROP_CLK_PWM;
 		break;
 	case BCMCLOCK_CLOCK_PCM:
 		break;
 	}
-
-	if (req.vbt_clkrate.id == 0) {
-		printf("bcmclock[unknown]: request to unknown clock type %d\n",
-		       cells[0]);
+	if (clk_id == 0) {
+		printf("%s: unknown clock device %d\n", __func__, cells[0]);
 		return 0;
 	}
 
-	bcmmbox_post(BCMMBOX_CHANARM2VC, &req, sizeof(req), &result);
+	error = bcmclock_get_frequency(&res, clk_id, VCPROPTAG_GET_CLOCKRATE);
+	if (error) {
+		printf("%s: failed to get frequency for clock device %d: \
+		    error %d\n", __func__, cells[0], error);
+		return 0;
+	}
 
-	if (vcprop_tag_success_p(&req.vbt_clkrate.tag))
-		return req.vbt_clkrate.rate;
-
-	printf("%s: vcprop result %x:%x\n", __func__, req.vb_hdr.vpb_rcode,
-	       req.vbt_clkrate.tag.vpt_rcode);
-
-	return 0;
+	return res;
 }

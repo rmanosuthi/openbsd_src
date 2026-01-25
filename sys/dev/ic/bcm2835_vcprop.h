@@ -152,27 +152,48 @@ struct vcprop_tag_boardmodel {
 	uint32_t model;
 };
 
+/*
+ * Revision codes:
+ * <https://github.com/raspberrypi/documentation/blob/master/documentation/asciidoc/computers/raspberry-pi/revision-codes.adoc>
+ */
 struct vcprop_tag_boardrev {
 	struct vcprop_tag tag;
 	uint32_t rev;
 };
 #define	VCPROP_REV_PCBREV	15
 #define	VCPROP_REV_MODEL	(255 << 4)
-#define	 RPI_MODEL_A		0
-#define	 RPI_MODEL_B		1
-#define	 RPI_MODEL_A_PLUS	2
-#define	 RPI_MODEL_B_PLUS	3
-#define	 RPI_MODEL_B_PI2	4
-#define	 RPI_MODEL_ALPHA	5
-#define	 RPI_MODEL_COMPUTE	6
-#define	 RPI_MODEL_ZERO		7
-#define	 RPI_MODEL_B_PI3	8
-#define	 RPI_MODEL_COMPUTE_PI3	9
-#define	 RPI_MODEL_ZERO_W	10
+#define	 RPI_MODEL_A		0x00
+#define	 RPI_MODEL_B		0x01
+#define	 RPI_MODEL_A_PLUS	0x02
+#define	 RPI_MODEL_B_PLUS	0x03
+#define	 RPI_MODEL_2B		0x04
+#define	 RPI_MODEL_ALPHA	0x05
+#define	 RPI_MODEL_CM1		0x06
+#define	 RPI_MODEL_3B		0x08
+#define	 RPI_MODEL_ZERO		0x09
+#define	 RPI_MODEL_CM3		0x0a
+#define	 RPI_MODEL_ZERO_W	0x0c
+#define	 RPI_MODEL_3B_PLUS	0x0d
+#define	 RPI_MODEL_3A_PLUS	0x0e
+/* #define	 RPI_MODEL_INTERNAL	0x0f */
+#define	 RPI_MODEL_CM3_PLUS	0x10
+#define	 RPI_MODEL_4B		0x11
+#define	 RPI_MODEL_ZERO_2W	0x12
+#define	 RPI_MODEL_400		0x13
+#define	 RPI_MODEL_CM4		0x14
+#define	 RPI_MODEL_CM4S		0x15
+/* #define	 RPI_MODEL_INTERNAL	0x16 */
+#define	 RPI_MODEL_5		0x17
+#define	 RPI_MODEL_CM5		0x18
+#define	 RPI_MODEL_500		0x19
+#define	 RPI_MODEL_CM5_LITE	0x1a
+
 #define	VCPROP_REV_PROCESSOR	(15 << 12)
 #define	 RPI_PROCESSOR_BCM2835	0
 #define	 RPI_PROCESSOR_BCM2836	1
 #define	 RPI_PROCESSOR_BCM2837	2
+#define	 RPI_PROCESSOR_BCM2711	3
+#define	 RPI_PROCESSOR_BCM2712	4
 #define	VCPROP_REV_MANUF	(15 << 16)
 #define	VCPROP_REV_MEMSIZE	(7 << 20)
 #define	VCPROP_REV_ENCFLAG	(1 << 23)
