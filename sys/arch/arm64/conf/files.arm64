@@ -272,6 +272,10 @@ device	rpiclock
 attach	rpiclock at fdt
 file	arch/arm64/dev/rpiclock.c		rpiclock
 
+device	rpicpu
+attach	rpicpu at fdt
+file	arch/arm64/dev/rpicpu.c			rpicpu
+
 device	rpigpio
 attach	rpigpio at fdt
 file	arch/arm64/dev/rpigpio.c		rpigpio

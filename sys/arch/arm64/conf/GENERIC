@@ -255,6 +255,7 @@ dwctwo*		at fdt?
 usb*		at dwctwo?
 rpone*		at pci?
 rpiclock*	at fdt? early 1
+rpicpu*		at fdt?
 rpigpio*	at fdt? early 1
 rpipwm*		at fdt?
 rpirtc*		at fdt?
